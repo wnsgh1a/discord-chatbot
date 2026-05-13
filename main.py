@@ -24,9 +24,26 @@ async def 뉴스(ctx):
     
     raw_news = ""
     for entry in feed.entries[:3]:
-        raw_news += f"Title: {entry.title}\nLink: {entry.link}\n\n"
+        raw_news += f"Title: {entry.title}\nLink: <{entry.link}>\nDate: {entry.published}\n\n"
     
-    prompt = f"다음 뉴스들을 한국어로 요약해줘:\n{raw_news}"
+    prompt = f"""
+너는 맨체스터 유나이티드 전문 뉴스 분석가야. 아래 뉴스 데이터들을 읽고 다음 형식을 '엄격히' 지켜서 한국어로 출력해줘.
+
+[출력 형식]
+번호. [매체명 / 기자명] - 공신력 [티어]
+(한 줄 띄고)
+[요약 내용: 기사의 핵심을 2~3줄로 설명]
+(날짜: YYYY-MM-DD 형식) [기사 읽기](<링크>) 
+
+[주의사항 - 매우 중요!]
+1. 링크는 반드시 < > 기호로 감싸서 [기사 읽기](<링크>) 형태로 출력해. 
+   - 예시: [기사 읽기](<https://news.google.com/...>)
+   - 이렇게 해야 디스코드 미리보기 박스가 생기지 않아.
+2. 날짜는 (날짜: 2026-05-13) 처럼 제공된 데이터의 published 날짜를 활용해.
+
+뉴스 데이터:
+{raw_news}
+"""
     
     try:
         # 터미널 목록에서 확인된 가장 최신 모델명으로 교체
