@@ -4,10 +4,10 @@ import os
 from dotenv import load_dotenv
 import feedparser
 from google import genai
+import re
 
 load_dotenv()
 
-# 최신 SDK 설정 방식
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
 intents = discord.Intents.default()
@@ -23,44 +23,59 @@ async def 뉴스(ctx):
     feed = feedparser.parse("https://news.google.com/rss/search?q=Manchester+United+when:24h&hl=en-US&gl=US&ceid=US:en")
     
     raw_news = ""
-    for entry in feed.entries[:3]:
+    for entry in feed.entries[:10]:
         raw_news += f"Title: {entry.title}\nLink: <{entry.link}>\nDate: {entry.published}\n\n"
     
     prompt = f"""
 너는 맨체스터 유나이티드 전문 뉴스 분석가야. 아래 뉴스 데이터들을 읽고 다음 형식을 '엄격히' 지켜서 한국어로 출력해줘.
 
 [출력 형식]
-번호. **[매체명 / 기자명]** - 공신력 [티어]
-(한 줄 띄고)
-[요약 내용: 기사의 핵심을 2~3줄로 설명]
-(날짜: YYYY-MM-DD 형식)
-[기사 읽기](<링크>) 
+번호. **[언론사 정보]** - 공신력 [티어]
+기사 핵심 내용을 2~3줄로 요약하여 설명.
+(날짜: YYYY-MM-DD)
+[기사 읽기](<링크>)
 
-[주의사항 - 매우 중요!]
-1. 링크는 반드시 < > 기호로 감싸서 [기사 읽기](<링크>) 형태로 출력해. 
-   - 예시: [기사 읽기](<https://news.google.com/...>)
-   - 이렇게 해야 디스코드 미리보기 박스가 생기지 않아.
-2. 날짜는 (날짜: 2026-05-13) 처럼 제공된 데이터의 published 날짜를 활용해.
+[언론사 정보 표기 규칙]
+1. 언론사 이름만 알 수 있는 경우: [언론사 이름]
+2. 기자 이름까지 알 수 있는 경우: [언론사 이름 - 기자 이름]
+   - 예시: [ESPN - Mark Ogden]
+   - 주의: "/" 기호는 사용하지 마.
+
+[주의사항 - 줄바꿈 강조]
+1. 각 기사의 시작은 반드시 '번호.' 형태로 시작해.
+2. '[요약 내용: ...]' 같은 가이드 문구는 절대 포함하지 말고 바로 요약 본문을 작성해.
+3. **(날짜: YYYY-MM-DD)를 쓴 후, 반드시 엔터키를 두 번 눌러서 다음 줄에 [기사 읽기](<링크>)를 작성해.** - 즉, 날짜와 기사 읽기 링크는 절대로 같은 줄에 있으면 안 돼.
+4. 링크는 반드시 < > 기호로 감싸서 [기사 읽기](<링크>) 형태로 출력해.
 
 뉴스 데이터:
 {raw_news}
 """
     
     try:
-        # 터미널 목록에서 확인된 가장 최신 모델명으로 교체
         response = client.models.generate_content(
             model="gemini-2.5-flash", 
             contents=prompt
         )
         
-        # 2026년 최신 SDK에서는 response.text로 결과값에 접근합니다.
-        await ctx.send(f"📢 **오늘의 맨유 브리핑**\n\n{response.text}")
+        full_text = response.text
+        # '번호.' 패턴을 기준으로 기사별 분할
+        articles = [a.strip() for a in re.split(r'\n(?=\d+\.)', full_text.strip()) if a.strip()]
         
+        header = "📢 **AI 분석: 오늘의 맨유 브리핑**\n\n"
+        current_message = header
+        
+        for article in articles:
+            # 1,900자 제한 체크
+            if len(current_message) + len(article) + 2 > 1900:
+                await ctx.send(current_message)
+                current_message = article + "\n\n"
+            else:
+                current_message += article + "\n\n"
+        
+        if current_message and current_message != header:
+            await ctx.send(current_message)
+            
     except Exception as e:
-        print(f"❌ 에러 발생: {e}")
-        if "429" in str(e):
-            await ctx.send("⚠️ 모델 사용량이 일시적으로 초과되었습니다. 1분만 기다려 주세요!")
-        else:
-            await ctx.send("⚠️ 모델명 연결에 성공했으나 답변 생성 중 문제가 발생했습니다.")
+        await ctx.send(f"❌ 에러 발생: {e}")
 
 bot.run(os.getenv('DISCORD_TOKEN'))
