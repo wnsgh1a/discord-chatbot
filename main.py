@@ -30,10 +30,11 @@ async def 뉴스(ctx):
 너는 맨체스터 유나이티드 전문 뉴스 분석가야. 아래 뉴스 데이터들을 읽고 다음 형식을 '엄격히' 지켜서 한국어로 출력해줘.
 
 [출력 형식]
-번호. [매체명 / 기자명] - 공신력 [티어]
+번호. **[매체명 / 기자명]** - 공신력 [티어]
 (한 줄 띄고)
 [요약 내용: 기사의 핵심을 2~3줄로 설명]
-(날짜: YYYY-MM-DD 형식) [기사 읽기](<링크>) 
+(날짜: YYYY-MM-DD 형식)
+[기사 읽기](<링크>) 
 
 [주의사항 - 매우 중요!]
 1. 링크는 반드시 < > 기호로 감싸서 [기사 읽기](<링크>) 형태로 출력해. 
@@ -48,18 +49,17 @@ async def 뉴스(ctx):
     try:
         # 터미널 목록에서 확인된 가장 최신 모델명으로 교체
         response = client.models.generate_content(
-            model="models/gemini-2.5-flash", 
+            model="gemini-2.5-flash", 
             contents=prompt
         )
         
         # 2026년 최신 SDK에서는 response.text로 결과값에 접근합니다.
-        await ctx.send(f"📢 **AI 분석: 오늘의 맨유 브리핑**\n\n{response.text}")
+        await ctx.send(f"📢 **오늘의 맨유 브리핑**\n\n{response.text}")
         
     except Exception as e:
         print(f"❌ 에러 발생: {e}")
-        # 아까 429 에러(할당량)가 났으니, 1.5 대신 2.5를 써도 할당량 문제가 생기면 안내합니다.
         if "429" in str(e):
-            await ctx.send("⚠️ 2.5 모델 사용량이 일시적으로 초과되었습니다. 1분만 기다려 주세요!")
+            await ctx.send("⚠️ 모델 사용량이 일시적으로 초과되었습니다. 1분만 기다려 주세요!")
         else:
             await ctx.send("⚠️ 모델명 연결에 성공했으나 답변 생성 중 문제가 발생했습니다.")
 
