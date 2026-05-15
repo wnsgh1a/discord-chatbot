@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 CHANNEL_ID = int(os.getenv('CHANNEL_ID', '0'))
 
 RSS_URLS = [
@@ -15,4 +15,4 @@ RSS_URLS = [
 
 MAX_ARTICLES_PER_SOURCE = 5
 DISCORD_MSG_LIMIT = 1900
-GEMINI_MODEL = "gemini-2.0-flash"
+DEEPSEEK_MODEL = "deepseek-chat"

@@ -1,8 +1,7 @@
-import re
 from datetime import datetime
 import pytz
-from google import genai
-from config import GEMINI_API_KEY, GEMINI_MODEL
+from openai import OpenAI
+from config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL
 
 KST = pytz.timezone('Asia/Seoul')
 
@@ -12,6 +11,9 @@ _NEWS_CATEGORIES = {
     "경기": 0x4488FF,
     "일반": 0x888888,
 }
+
+def _get_client():
+    return OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 
 
 def _build_prompt(raw_news: str) -> str:
@@ -76,7 +78,10 @@ def parse_articles(raw_text: str) -> list[dict]:
 
 
 def analyze_news(raw_news: str) -> list[dict]:
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    client = _get_client()
     prompt = _build_prompt(raw_news)
-    response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-    return parse_articles(response.text)
+    response = client.chat.completions.create(
+        model=DEEPSEEK_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return parse_articles(response.choices[0].message.content)
