@@ -1,9 +1,12 @@
+import time
 from datetime import datetime
 import pytz
 from openai import OpenAI
 from config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL
 
 KST = pytz.timezone('Asia/Seoul')
+MAX_RETRIES = 3
+RETRY_DELAY = 2
 
 _NEWS_CATEGORIES = {
     "속보": 0xFF4444,
@@ -12,8 +15,9 @@ _NEWS_CATEGORIES = {
     "일반": 0x888888,
 }
 
+
 def _get_client():
-    return OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+    return OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com", timeout=30)
 
 
 def _build_prompt(raw_news: str) -> str:
@@ -44,6 +48,53 @@ def _build_prompt(raw_news: str) -> str:
 뉴스 데이터:
 {raw_news}
 """
+
+
+def _build_match_prompt(raw_news: str) -> str:
+    today_kst = datetime.now(KST).strftime('%Y년 %m월 %d일')
+
+    return f"""
+너는 맨체스터 유나이티드 전문 축구 분석가야. 아래 경기 관련 뉴스 데이터를 읽고 다음 형식으로 분석해줘.
+
+[형식]
+**🟥 [대회명]**
+**맨유 [스코어] 상대팀**
+* 날짜: [YYYY-MM-DD]
+* 장소: [홈/원정]
+
+**경기 요약**
+[3~5줄 요약]
+
+**주요 기록**
+- 점유율: [%]
+- 슈팅: [N]
+- 유효슈팅: [N]
+- 핵심 선수: [이름]
+
+**총평**
+[2~3줄]
+
+경기 뉴스 데이터:
+{raw_news}
+"""
+
+
+def _call_api(prompt: str) -> str | None:
+    client = _get_client()
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.chat.completions.create(
+                model=DEEPSEEK_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                timeout=30,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY * (attempt + 1))
+            else:
+                raise e
+    return None
 
 
 def parse_articles(raw_text: str) -> list[dict]:
@@ -77,11 +128,23 @@ def parse_articles(raw_text: str) -> list[dict]:
     return articles
 
 
+def parse_match(raw_text: str) -> dict | None:
+    if not raw_text or "경기 요약" not in raw_text:
+        return None
+    return {
+        "type": "match",
+        "text": raw_text,
+        "color": 0x44AA44,
+    }
+
+
 def analyze_news(raw_news: str) -> list[dict]:
-    client = _get_client()
     prompt = _build_prompt(raw_news)
-    response = client.chat.completions.create(
-        model=DEEPSEEK_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return parse_articles(response.choices[0].message.content)
+    result = _call_api(prompt)
+    return parse_articles(result) if result else []
+
+
+def analyze_match(raw_match: str) -> dict | None:
+    prompt = _build_match_prompt(raw_match)
+    result = _call_api(prompt)
+    return parse_match(result)
