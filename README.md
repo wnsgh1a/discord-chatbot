@@ -15,7 +15,6 @@
 1. 패키지를 설치합니다.
 ```
 pip install discord.py openai python-dotenv feedparser pytz
-
 ```
 
 2. `.env` 파일을 생성하고 아래 환경 변수를 설정합니다.
@@ -24,7 +23,6 @@ pip install discord.py openai python-dotenv feedparser pytz
 DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
 DEEPSEEK_API_KEY="YOUR_DEEPSEEK_API_KEY"
 CHANNEL_ID="YOUR_CHANNEL_ID"
-
 ```
 
 ## 실행 방법
@@ -33,7 +31,6 @@ CHANNEL_ID="YOUR_CHANNEL_ID"
 
 ```
 python main.py
-
 ```
 
 ## 테스트
@@ -42,9 +39,5 @@ python main.py
 
 ```
 pytest
-
 ```
 
-```
-
-```
