@@ -13,16 +13,18 @@
 ## 설치 및 환경 설정
 
 1. 패키지를 설치합니다.
+
 ```
 pip install -r requirements.txt
 ```
 
 개발·테스트 시:
+
 ```
 pip install -r requirements-dev.txt
 ```
 
-2. `.env` 파일을 생성하고 아래 환경 변수를 설정합니다.
+2. `.env` 파일을 생성하고 아래 환경 변수를 설정합니다. (`.env-example` 참고)
 
 ```env
 DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
@@ -32,32 +34,97 @@ CHANNEL_ID="YOUR_CHANNEL_ID"
 
 ## 실행 방법
 
-스크립트를 직접 실행하여 수동으로 뉴스를 가져오고 디스코드로 전송할 수 있습니다.
+### 일반 실행 (Discord 전송)
 
 ```
 python main.py
 ```
 
-## 테스트
+### dry-run (Discord 없이 콘솔·JSON 확인)
 
-`pytest`를 사용하여 작성된 단위 테스트를 실행할 수 있습니다.
+```
+python main.py --dry-run
+python main.py --dry-run --output data/preview.json
+```
+
+환경 변수 `DRY_RUN=1`로도 활성화할 수 있습니다. AI 호출은 수행되며 Discord 전송·URL 기록은 하지 않습니다.
+
+### Discord Webhook 전송
+
+봇 토큰 대신 Webhook만 쓰려면:
+
+```env
+USE_DISCORD_WEBHOOK=1
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DEEPSEEK_API_KEY=...
+```
+
+## 테스트
 
 ```
 pytest
 ```
 
-`main` 실행 전 `DISCORD_TOKEN`, `DEEPSEEK_API_KEY`, `CHANNEL_ID`가 없으면 시작 단계에서 종료됩니다.
+`main` 실행 전 필수 값은 전송 방식에 따라 다릅니다.
+
+| 모드 | 필수 환경 변수 |
+|------|----------------|
+| 기본 (봇) | `DISCORD_TOKEN`, `DEEPSEEK_API_KEY`, `CHANNEL_ID` |
+| Webhook | `DISCORD_WEBHOOK_URL`, `USE_DISCORD_WEBHOOK=1`, `DEEPSEEK_API_KEY` |
+| dry-run | `DEEPSEEK_API_KEY` |
 
 push/PR 시 GitHub Actions(`ci.yml`)에서 자동으로 테스트가 실행됩니다.
 
-## 선택 환경 변수
+## GitHub Actions
+
+### 일일 뉴스 (`daily_news.yml`)
+
+* 스케줄: UTC 22:00 (한국 시간 오전 7시)
+* **수동 실행**: GitHub → Actions → Daily Man Utd News → Run workflow
+
+필수 Secrets:
+
+| Secret | 설명 |
+|--------|------|
+| `DISCORD_TOKEN` | 봇 토큰 |
+| `DEEPSEEK_API_KEY` | DeepSeek API 키 |
+| `CHANNEL_ID` | 전송 채널 ID |
+
+선택: `TEST_CHANNEL_ID` + repository variable/env `USE_TEST_CHANNEL=1`로 테스트 채널 분리.
+
+전송 URL 중복 방지용 `data/sent_urls.json`은 workflow cache로 유지됩니다.
+
+### 실패 시 확인
+
+1. Actions 로그에서 `ConfigError`, RSS, API 오류 메시지 확인
+2. Secrets·채널 ID·봇 권한(메시지 전송) 점검
+3. 로컬에서 `python main.py --dry-run`으로 AI·RSS만 검증
+
+## 환경 변수
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
+| `RSS_URLS` | (내장 3개 피드) | 쉼표 또는 줄바꿈으로 RSS URL 목록 |
+| `TIER_1_SOURCES` | (내장 5명) | 1티어 기자/매체명 목록 |
+| `MAX_ARTICLES_PER_SOURCE` | `5` | 피드당 최대 기사 수 |
+| `RSS_FETCH_TIMEOUT` | `10` | RSS 요청 타임아웃(초) |
+| `DEEPSEEK_MODEL` | `deepseek-chat` | DeepSeek 모델명 |
 | `SENT_URLS_PATH` | `data/sent_urls.json` | 전송한 기사 URL 저장 경로 |
 | `SENT_URL_RETENTION_DAYS` | `7` | 중복 방지 기록 보관 일수 |
 | `MAX_EMBEDS_PER_RUN` | `15` | 1회 실행당 최대 Embed 수 (1티어 우선) |
-| `EMBED_SEND_DELAY_SEC` | `0.6` | Embed 전송 간격(초), rate limit 완화 |
+| `EMBED_SEND_DELAY_SEC` | `0.6` | Embed 전송 간격(초) |
+| `TEST_CHANNEL_ID` | — | `USE_TEST_CHANNEL=1`일 때 사용할 채널 |
+| `USE_TEST_CHANNEL` | — | `1`/`true`/`yes` 시 테스트 채널 사용 |
+| `DISCORD_WEBHOOK_URL` | — | Webhook URL |
+| `USE_DISCORD_WEBHOOK` | — | `1`이면 Webhook으로 전송 |
+| `DRY_RUN` | — | `1`이면 dry-run |
+| `DRY_RUN_OUTPUT_PATH` | `data/dry_run_briefing.json` | dry-run JSON 기본 경로 |
 
-GitHub Actions 일일 실행 시 `data/sent_urls.json`은 workflow cache로 유지됩니다.
+## 데이터 흐름
 
+```
+RSS 피드 → news_fetcher → ai_analyzer → article_store(중복 제거)
+    → formatter(Embed) → Discord (봇 / Webhook)
+```
+
+개선 항목 추적: `IMPROVEMENTS_CHECKLIST.md`

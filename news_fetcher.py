@@ -4,12 +4,11 @@ from dataclasses import dataclass
 import feedparser
 import socket
 
-from config import MAX_ARTICLES_PER_SOURCE, RSS_URLS
+from config import MAX_ARTICLES_PER_SOURCE, RSS_FETCH_TIMEOUT, RSS_URLS, TIER_1_SOURCES
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_SECONDS = 10
-TIER_1_SOURCES = ["Fabrizio Romano", "David Ornstein", "The Athletic", "BBC Sport", "Stone Simon"]
+TIMEOUT_SECONDS = RSS_FETCH_TIMEOUT
 
 
 @dataclass
