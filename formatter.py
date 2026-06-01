@@ -1,8 +1,12 @@
+import logging
 from datetime import datetime
-import pytz
-import discord
 
-KST = pytz.timezone('Asia/Seoul')
+import discord
+import pytz
+
+logger = logging.getLogger(__name__)
+
+KST = pytz.timezone("Asia/Seoul")
 
 CATEGORY_EMOJIS = {
     "속보": "🚨",
@@ -14,6 +18,8 @@ CATEGORY_EMOJIS = {
 
 async def send_as_embeds(channel, articles: list[dict], match_analysis: dict | None = None):
     today_kst = datetime.now(KST).strftime('%Y년 %m월 %d일')
+
+    logger.info("Discord Embed 전송 시작 (기사 %d건)", len(articles))
 
     if match_analysis:
         embed = discord.Embed(
@@ -46,3 +52,5 @@ async def send_as_embeds(channel, articles: list[dict], match_analysis: dict | N
         embed.set_footer(text=f"발행일: {article['date']}")
 
         await channel.send(embed=embed)
+
+    logger.info("Embed 전송 완료")

@@ -1,8 +1,13 @@
+import logging
 import time
 from datetime import datetime
+
 import pytz
 from openai import OpenAI
+
 from config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL
+
+logger = logging.getLogger(__name__)
 
 KST = pytz.timezone('Asia/Seoul')
 MAX_RETRIES = 3
@@ -83,6 +88,7 @@ def _call_api(prompt: str) -> str | None:
     client = _get_client()
     for attempt in range(MAX_RETRIES):
         try:
+            logger.info("DeepSeek API 호출 (시도 %d/%d)", attempt + 1, MAX_RETRIES)
             response = client.chat.completions.create(
                 model=DEEPSEEK_MODEL,
                 messages=[{"role": "user", "content": prompt}],
@@ -91,9 +97,11 @@ def _call_api(prompt: str) -> str | None:
             return response.choices[0].message.content
         except Exception as e:
             if attempt < MAX_RETRIES - 1:
+                logger.warning("API 호출 실패, 재시도 예정: %s", e)
                 time.sleep(RETRY_DELAY * (attempt + 1))
             else:
-                raise e
+                logger.error("API 호출 최종 실패: %s", e)
+                raise
     return None
 
 
@@ -141,7 +149,9 @@ def parse_match(raw_text: str) -> dict | None:
 def analyze_news(raw_news: str) -> list[dict]:
     prompt = _build_prompt(raw_news)
     result = _call_api(prompt)
-    return parse_articles(result) if result else []
+    articles = parse_articles(result) if result else []
+    logger.info("뉴스 파싱 결과: %d건", len(articles))
+    return articles
 
 
 def analyze_match(raw_match: str) -> dict | None:

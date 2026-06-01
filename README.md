@@ -14,7 +14,12 @@
 
 1. 패키지를 설치합니다.
 ```
-pip install discord.py openai python-dotenv feedparser pytz
+pip install -r requirements.txt
+```
+
+개발·테스트 시:
+```
+pip install -r requirements-dev.txt
 ```
 
 2. `.env` 파일을 생성하고 아래 환경 변수를 설정합니다.
@@ -40,4 +45,8 @@ python main.py
 ```
 pytest
 ```
+
+`main` 실행 전 `DISCORD_TOKEN`, `DEEPSEEK_API_KEY`, `CHANNEL_ID`가 없으면 시작 단계에서 종료됩니다.
+
+push/PR 시 GitHub Actions(`ci.yml`)에서 자동으로 테스트가 실행됩니다.
 

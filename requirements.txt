@@ -1,0 +1,5 @@
+discord.py==2.4.0
+openai==1.59.6
+python-dotenv==1.0.1
+feedparser==6.0.11
+pytz==2024.2

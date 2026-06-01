@@ -1,6 +1,10 @@
+import logging
 import feedparser
 import socket
-from config import RSS_URLS, MAX_ARTICLES_PER_SOURCE
+
+from config import MAX_ARTICLES_PER_SOURCE, RSS_URLS
+
+logger = logging.getLogger(__name__)
 
 TIMEOUT_SECONDS = 10
 TIER_1_SOURCES = ["Fabrizio Romano", "David Ornstein", "The Athletic", "BBC Sport", "Stone Simon"]
@@ -14,11 +18,14 @@ def _parse_feed(url: str) -> str:
     socket.setdefaulttimeout(TIMEOUT_SECONDS)
     feed = feedparser.parse(url)
     if feed.bozo and not feed.entries:
+        logger.warning("RSS 피드 파싱 실패 또는 항목 없음: %s", url)
         return ""
     raw = ""
+    count = min(len(feed.entries), MAX_ARTICLES_PER_SOURCE)
     for entry in feed.entries[:MAX_ARTICLES_PER_SOURCE]:
         tier_note = "[★1-Tier High Priority★] " if is_tier1(entry.title) else ""
         raw += f"{tier_note}Title: {entry.title}\nLink: {entry.link}\nDate: {entry.published}\n\n"
+    logger.info("RSS 수집 완료: %s (%d건)", url, count)
     return raw
 
 
@@ -57,4 +64,10 @@ def fetch_news() -> str:
                 general_news += full_block
 
     combined = match_news + general_news
+    logger.info(
+        "뉴스 병합 완료: 경기 %d블록, 일반 %d블록, 중복 제외 후 총 %d건",
+        match_news.count("Title:"),
+        general_news.count("Title:"),
+        combined.count("Title:"),
+    )
     return combined
