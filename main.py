@@ -6,7 +6,7 @@ import discord
 from config import CHANNEL_ID, DISCORD_TOKEN, ConfigError, validate_config
 from logging_config import setup_logging
 from news_fetcher import fetch_news
-from ai_analyzer import analyze_news, analyze_match
+from ai_analyzer import analyze_news, analyze_match, build_fallback_articles
 import formatter
 
 logger = logging.getLogger(__name__)
@@ -38,27 +38,31 @@ async def send_daily_news():
 
     try:
         logger.info("RSS 뉴스 수집 시작")
-        raw_news = fetch_news()
-        if not raw_news:
+        fetched = fetch_news()
+        if not fetched.combined:
             logger.warning("수집된 뉴스 없음")
             await channel.send("❌ 뉴스를 가져오지 못했습니다. RSS 피드를 확인해주세요.")
             return
 
-        logger.info("수집된 뉴스 블록 수: %d", raw_news.count("Title:"))
+        logger.info("수집된 뉴스 블록 수: %d", fetched.article_count)
 
-        run_match = "경기" in raw_news or any(
-            kw in raw_news.lower() for kw in ["result", "match report", "premier league"]
-        )
         match_analysis = None
-        if run_match:
-            logger.info("경기 분석 시작")
-            match_analysis = analyze_match(raw_news)
+        if fetched.has_match_news():
+            logger.info("경기 분석 시작 (경기 뉴스 %d블록)", fetched.match_news.count("Title:"))
+            match_analysis = analyze_match(fetched.match_news)
 
         logger.info("AI 뉴스 분석 시작")
-        articles = analyze_news(raw_news)
-        logger.info("분석 완료: 기사 %d건", len(articles))
+        articles = analyze_news(fetched.combined)
+        use_fallback = False
+        if not articles:
+            logger.warning("AI 요약 실패, 원문 링크 fallback 사용")
+            articles = build_fallback_articles(fetched.combined)
+            use_fallback = True
 
-        await formatter.send_as_embeds(channel, articles, match_analysis)
+        logger.info("전송 준비: 기사 %d건 (fallback=%s)", len(articles), use_fallback)
+        await formatter.send_as_embeds(
+            channel, articles, match_analysis, fallback_mode=use_fallback
+        )
         logger.info("Discord 전송 완료")
 
     except discord.Forbidden:
