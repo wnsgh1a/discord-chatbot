@@ -17,6 +17,11 @@ MAX_ARTICLES_PER_SOURCE = 5
 DISCORD_MSG_LIMIT = 1900
 DEEPSEEK_MODEL = "deepseek-chat"
 
+SENT_URLS_PATH = os.getenv("SENT_URLS_PATH", "data/sent_urls.json")
+SENT_URL_RETENTION_DAYS = int(os.getenv("SENT_URL_RETENTION_DAYS", "7"))
+MAX_EMBEDS_PER_RUN = int(os.getenv("MAX_EMBEDS_PER_RUN", "15"))
+EMBED_SEND_DELAY_SEC = float(os.getenv("EMBED_SEND_DELAY_SEC", "0.6"))
+
 
 class ConfigError(ValueError):
     """필수 환경 변수가 없거나 잘못되었을 때 발생합니다."""

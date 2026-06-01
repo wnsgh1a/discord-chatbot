@@ -3,6 +3,7 @@ import logging
 
 import discord
 
+from article_store import filter_new_articles, record_sent_urls
 from config import CHANNEL_ID, DISCORD_TOKEN, ConfigError, validate_config
 from logging_config import setup_logging
 from news_fetcher import fetch_news
@@ -59,10 +60,27 @@ async def send_daily_news():
             articles = build_fallback_articles(fetched.combined)
             use_fallback = True
 
-        logger.info("전송 준비: 기사 %d건 (fallback=%s)", len(articles), use_fallback)
-        await formatter.send_as_embeds(
+        articles, skipped_count = filter_new_articles(articles)
+        if not articles and not match_analysis:
+            if skipped_count:
+                await channel.send(
+                    "📭 오늘 수집된 뉴스는 모두 이전에 전송한 기사입니다. 새 소식이 없습니다."
+                )
+            else:
+                await channel.send("❌ 표시할 뉴스가 없습니다.")
+            return
+
+        logger.info(
+            "전송 준비: 기사 %d건 (fallback=%s, 중복제외=%d)",
+            len(articles),
+            use_fallback,
+            skipped_count,
+        )
+        sent_urls = await formatter.send_as_embeds(
             channel, articles, match_analysis, fallback_mode=use_fallback
         )
+        if sent_urls:
+            record_sent_urls(sent_urls)
         logger.info("Discord 전송 완료")
 
     except discord.Forbidden:

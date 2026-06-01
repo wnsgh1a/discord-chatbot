@@ -50,3 +50,14 @@ pytest
 
 push/PR 시 GitHub Actions(`ci.yml`)에서 자동으로 테스트가 실행됩니다.
 
+## 선택 환경 변수
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `SENT_URLS_PATH` | `data/sent_urls.json` | 전송한 기사 URL 저장 경로 |
+| `SENT_URL_RETENTION_DAYS` | `7` | 중복 방지 기록 보관 일수 |
+| `MAX_EMBEDS_PER_RUN` | `15` | 1회 실행당 최대 Embed 수 (1티어 우선) |
+| `EMBED_SEND_DELAY_SEC` | `0.6` | Embed 전송 간격(초), rate limit 완화 |
+
+GitHub Actions 일일 실행 시 `data/sent_urls.json`은 workflow cache로 유지됩니다.
+
