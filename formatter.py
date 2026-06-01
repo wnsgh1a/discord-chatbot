@@ -1,11 +1,12 @@
 import asyncio
 import logging
+from collections import defaultdict
 from datetime import datetime
 
 import discord
 import pytz
 
-from config import EMBED_SEND_DELAY_SEC, MAX_EMBEDS_PER_RUN
+from config import EMBED_LAYOUT, EMBED_SEND_DELAY_SEC, MAX_EMBEDS_PER_RUN
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,32 @@ def prepare_article_embed(article: dict) -> discord.Embed:
     return embed
 
 
+def _build_digest_description(articles: list[dict]) -> str:
+    lines = []
+    for article in articles:
+        link = article.get("link") or ""
+        title = article.get("title", "제목 없음")
+        summary = truncate(article.get("summary", ""), 280)
+        if link:
+            lines.append(f"**{title}**\n{summary}\n[기사 보기]({link})")
+        else:
+            lines.append(f"**{title}**\n{summary}")
+    return truncate("\n\n".join(lines), EMBED_DESC_LIMIT)
+
+
+def _build_category_digest_embed(category: str, articles: list[dict]) -> discord.Embed:
+    emoji = CATEGORY_EMOJIS.get(category, "ℹ️")
+    color = articles[0]["color"] if articles else 0x888888
+    embed = discord.Embed(
+        title=truncate(f"{emoji} {category} 요약 ({len(articles)}건)", EMBED_TITLE_LIMIT),
+        description=_build_digest_description(articles),
+        color=color,
+        timestamp=datetime.now(KST),
+    )
+    embed.set_footer(text="카테고리별 요약")
+    return embed
+
+
 async def _send_with_delay(target, *, embed=None, content=None, delay: float = EMBED_SEND_DELAY_SEC):
     if embed is not None:
         await target.send(embed=embed)
@@ -110,6 +137,65 @@ async def _send_match_analysis(target, match_analysis: dict) -> None:
         await _send_with_delay(target, embed=embed)
 
 
+async def _send_individual_articles(target, articles: list[dict]) -> list[str]:
+    sent_urls: list[str] = []
+    for article in articles:
+        embed = prepare_article_embed(article)
+        await _send_with_delay(target, embed=embed)
+        link = article.get("link")
+        if link:
+            sent_urls.append(link)
+    return sent_urls
+
+
+async def _send_digest_layout(target, articles: list[dict]) -> list[str]:
+    by_category: dict[str, list[dict]] = defaultdict(list)
+    for article in articles:
+        by_category[article.get("category", "일반")].append(article)
+
+    sent_urls: list[str] = []
+    for category in ("속보", "이적", "경기", "일반"):
+        group = by_category.get(category)
+        if not group:
+            continue
+        embed = _build_category_digest_embed(category, group)
+        await _send_with_delay(target, embed=embed)
+        for article in group:
+            if article.get("link"):
+                sent_urls.append(article["link"])
+    return sent_urls
+
+
+async def _send_tier1_split_layout(target, articles: list[dict]) -> list[str]:
+    tier1 = [a for a in articles if "⭐" in a.get("tier", "")]
+    rest = [a for a in articles if "⭐" not in a.get("tier", "")]
+
+    sent_urls = await _send_individual_articles(target, tier1)
+    if rest:
+        embed = discord.Embed(
+            title="ℹ️ 기타 뉴스 요약",
+            description=_build_digest_description(rest),
+            color=0x888888,
+            timestamp=datetime.now(KST),
+        )
+        await _send_with_delay(target, embed=embed)
+        for article in rest:
+            if article.get("link"):
+                sent_urls.append(article["link"])
+    return sent_urls
+
+
+async def _send_articles_by_layout(target, articles: list[dict]) -> list[str]:
+    layout = EMBED_LAYOUT
+    if layout == "digest":
+        logger.info("Embed 레이아웃: 카테고리별 요약")
+        return await _send_digest_layout(target, articles)
+    if layout == "tier1_split":
+        logger.info("Embed 레이아웃: 1티어 개별 + 나머지 묶음")
+        return await _send_tier1_split_layout(target, articles)
+    return await _send_individual_articles(target, articles)
+
+
 async def send_as_embeds(
     target,
     articles: list[dict],
@@ -117,11 +203,10 @@ async def send_as_embeds(
     *,
     fallback_mode: bool = False,
 ) -> list[str]:
-    """Embed를 전송하고 실제로 보낸 기사 URL 목록을 반환합니다."""
     today_kst = datetime.now(KST).strftime("%Y년 %m월 %d일")
     articles = prioritize_articles(articles)
 
-    logger.info("Discord Embed 전송 시작 (기사 %d건)", len(articles))
+    logger.info("Discord Embed 전송 시작 (기사 %d건, layout=%s)", len(articles), EMBED_LAYOUT)
     sent_urls: list[str] = []
 
     if not articles and not match_analysis:
@@ -144,12 +229,7 @@ async def send_as_embeds(
             header = f"📢 **[{today_kst}] AI 분석: 오늘의 맨유 전문 브리핑 (고도화 버전)**\n\n"
             await _send_with_delay(target, content=header)
 
-        for article in articles:
-            embed = prepare_article_embed(article)
-            await _send_with_delay(target, embed=embed)
-            link = article.get("link")
-            if link:
-                sent_urls.append(link)
+        sent_urls = await _send_articles_by_layout(target, articles)
 
     logger.info("Embed 전송 완료 (%d건)", len(sent_urls))
     return sent_urls

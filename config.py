@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,6 +34,17 @@ EMBED_SEND_DELAY_SEC = float(os.getenv("EMBED_SEND_DELAY_SEC", "0.6"))
 MAX_ARTICLES_PER_SOURCE = int(os.getenv("MAX_ARTICLES_PER_SOURCE", "5"))
 RSS_FETCH_TIMEOUT = int(os.getenv("RSS_FETCH_TIMEOUT", "10"))
 DRY_RUN_OUTPUT_PATH = os.getenv("DRY_RUN_OUTPUT_PATH", "data/dry_run_briefing.json")
+MAX_RAW_NEWS_CHARS = int(os.getenv("MAX_RAW_NEWS_CHARS", "12000"))
+MAX_NEWS_BLOCKS_FOR_AI = int(os.getenv("MAX_NEWS_BLOCKS_FOR_AI", "20"))
+EMBED_LAYOUT = os.getenv("EMBED_LAYOUT", "individual").strip().lower()
+FAILURE_WEBHOOK_URL = (os.getenv("FAILURE_WEBHOOK_URL") or "").strip()
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+TIER1_ONLY = _env_flag("TIER1_ONLY")
 
 
 def parse_list_env(value: str | None, *, separator: str = ",") -> list[str]:

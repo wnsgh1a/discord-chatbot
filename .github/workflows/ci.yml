@@ -16,11 +16,23 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Ruff
+        run: ruff check .
+
       - name: Run tests
         run: pytest
+
+      - name: Notify failure
+        if: failure() && secrets.FAILURE_WEBHOOK_URL != ''
+        env:
+          FAILURE_WEBHOOK_URL: ${{ secrets.FAILURE_WEBHOOK_URL }}
+        run: |
+          curl -sf -H "Content-Type: application/json" \
+            -d "{\"content\":\"❌ CI 실패: ${{ github.repository }} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            "$FAILURE_WEBHOOK_URL"

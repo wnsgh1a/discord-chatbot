@@ -6,8 +6,8 @@ from datetime import datetime
 import pytz
 from openai import OpenAI
 
-from config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL
-from news_fetcher import extract_links_from_raw
+from config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL, MAX_NEWS_BLOCKS_FOR_AI, MAX_RAW_NEWS_CHARS
+from news_fetcher import extract_links_from_raw, is_tier1_text, truncate_raw_news
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,15 @@ _NEWS_CATEGORIES = {
 }
 
 
+class AIAnalysisError(Exception):
+    """사용자에게 표시할 메시지를 포함한 AI 분석 오류."""
+
+    def __init__(self, user_message: str, *, cause: Exception | None = None):
+        self.user_message = user_message
+        self.cause = cause
+        super().__init__(user_message)
+
+
 def _get_client():
     return OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com", timeout=30)
 
@@ -32,8 +41,17 @@ def _today_kst() -> str:
     return datetime.now(KST).strftime("%Y년 %m월 %d일")
 
 
+def _limit_raw_news(raw_news: str) -> str:
+    return truncate_raw_news(
+        raw_news,
+        max_chars=MAX_RAW_NEWS_CHARS,
+        max_blocks=MAX_NEWS_BLOCKS_FOR_AI,
+    )
+
+
 def _build_json_prompt(raw_news: str) -> str:
     today = _today_kst()
+    limited = _limit_raw_news(raw_news)
     return f"""
 너는 맨체스터 유나이티드 전문 뉴스 분석가야.
 오늘 날짜(KST): {today}
@@ -63,12 +81,13 @@ def _build_json_prompt(raw_news: str) -> str:
 - 일반: 인터뷰, 구단 소식, 부상, 기타
 
 뉴스 데이터:
-{raw_news}
+{limited}
 """
 
 
 def _build_match_json_prompt(raw_match: str) -> str:
     today = _today_kst()
+    limited = _limit_raw_news(raw_match)
     return f"""
 너는 맨체스터 유나이티드 전문 축구 분석가야. 오늘 날짜(KST): {today}
 아래 경기 관련 뉴스만 읽고 분석하세요.
@@ -83,12 +102,13 @@ def _build_match_json_prompt(raw_match: str) -> str:
 경기 정보가 불충분하면 {{"has_match": false, "analysis_text": ""}} 를 반환하세요.
 
 경기 뉴스 데이터:
-{raw_match}
+{limited}
 """
 
 
 def _call_api_json(prompt: str) -> dict | None:
     client = _get_client()
+    last_error: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
             logger.info("DeepSeek API JSON 호출 (시도 %d/%d)", attempt + 1, MAX_RETRIES)
@@ -106,18 +126,24 @@ def _call_api_json(prompt: str) -> dict | None:
             )
             content = response.choices[0].message.content
             if not content:
-                return None
+                last_error = AIAnalysisError("AI가 빈 응답을 반환했습니다.")
+                continue
             return json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.warning("JSON 디코드 실패 (시도 %d): %s", attempt + 1, e)
-        except Exception as e:
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            logger.warning("JSON 디코드 실패 (시도 %d/%d)", attempt + 1, MAX_RETRIES)
+        except Exception as exc:
+            last_error = exc
             if attempt < MAX_RETRIES - 1:
-                logger.warning("API 호출 실패, 재시도 예정: %s", e)
+                logger.warning("API 호출 실패, %ds 후 재시도: %s", RETRY_DELAY * (attempt + 1), exc)
                 time.sleep(RETRY_DELAY * (attempt + 1))
             else:
-                logger.error("API 호출 최종 실패: %s", e)
-                raise
-    return None
+                logger.error("API 호출 최종 실패: %s", exc)
+
+    raise AIAnalysisError(
+        "AI 뉴스 분석에 실패했습니다. 잠시 후 다시 시도하거나 RSS fallback 링크를 확인해 주세요.",
+        cause=last_error,
+    )
 
 
 def _article_dict(
@@ -166,7 +192,6 @@ def parse_articles_json(data: dict) -> list[dict]:
 
 
 def parse_articles(raw_text: str) -> list[dict]:
-    """레거시 텍스트 형식 파서 (하위 호환·테스트용)."""
     articles_raw = [a.strip() for a in raw_text.split("---") if a.strip()]
     articles = []
     for article in articles_raw:
@@ -195,13 +220,9 @@ def parse_articles(raw_text: str) -> list[dict]:
 
 
 def build_fallback_articles(raw_news: str) -> list[dict]:
-    """AI 파싱 실패 시 RSS 원문 링크 목록으로 Embed 데이터를 생성합니다."""
     articles = []
     for item in extract_links_from_raw(raw_news):
-        tier = "⭐최상위" if any(
-            name.lower() in item["title"].lower()
-            for name in ["Fabrizio Romano", "David Ornstein", "The Athletic", "BBC Sport"]
-        ) else "일반"
+        tier = "⭐최상위" if is_tier1_text(item["title"]) else "일반"
         articles.append(
             _article_dict(
                 category="일반",
@@ -222,29 +243,20 @@ def parse_match_json(data: dict) -> dict | None:
     text = (data.get("analysis_text") or "").strip()
     if not text:
         return None
-    return {
-        "type": "match",
-        "text": text,
-        "color": 0x44AA44,
-    }
+    return {"type": "match", "text": text, "color": 0x44AA44}
 
 
 def parse_match(raw_text: str) -> dict | None:
-    """레거시 마크다운 경기 분석 파서."""
     if not raw_text or "경기 요약" not in raw_text:
         return None
-    return {
-        "type": "match",
-        "text": raw_text,
-        "color": 0x44AA44,
-    }
+    return {"type": "match", "text": raw_text, "color": 0x44AA44}
 
 
 def analyze_news(raw_news: str) -> list[dict]:
-    data = _call_api_json(_build_json_prompt(raw_news))
-    if not data:
-        logger.warning("뉴스 JSON 응답 없음")
-        return []
+    try:
+        data = _call_api_json(_build_json_prompt(raw_news))
+    except AIAnalysisError:
+        raise
     articles = parse_articles_json(data)
     logger.info("뉴스 JSON 파싱 결과: %d건", len(articles))
     return articles
@@ -253,8 +265,10 @@ def analyze_news(raw_news: str) -> list[dict]:
 def analyze_match(raw_match: str) -> dict | None:
     if not raw_match.strip():
         return None
-    data = _call_api_json(_build_match_json_prompt(raw_match))
-    if not data:
+    try:
+        data = _call_api_json(_build_match_json_prompt(raw_match))
+    except AIAnalysisError as exc:
+        logger.warning("경기 분석 실패, 건너뜀: %s", exc.user_message)
         return None
     result = parse_match_json(data)
     if result:

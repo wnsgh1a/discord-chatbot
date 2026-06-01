@@ -6,6 +6,7 @@ import aiohttp
 import discord
 from discord import Webhook
 
+import formatter
 from article_store import record_sent_urls
 from briefing import build_briefing
 from config import (
@@ -19,7 +20,7 @@ from config import (
 )
 from dry_run_output import print_briefing, save_briefing_json
 from logging_config import setup_logging
-import formatter
+from utils import safe_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,9 @@ async def deliver_to_channel(channel, result, *, record_sent: bool = True) -> No
     if result.empty_message:
         await channel.send(result.empty_message)
         return
+
+    if result.ai_error_message and result.fallback_mode:
+        await channel.send(f"⚠️ {result.ai_error_message}")
 
     logger.info(
         "전송 준비: 기사 %d건 (fallback=%s, 중복제외=%d)",
@@ -55,6 +59,7 @@ async def deliver_via_bot(result) -> None:
     intents = discord.Intents.default()
     bot = discord.Client(intents=intents)
     channel_id = get_channel_id()
+    channel = None
 
     logger.info("Discord 로그인 시도 (channel_id=%s)", channel_id)
     try:
@@ -63,9 +68,13 @@ async def deliver_via_bot(result) -> None:
     except discord.LoginFailure:
         logger.error("Discord 로그인 실패: 토큰을 확인하세요")
         await bot.close()
-        raise
+        raise ConfigError("Discord 로그인에 실패했습니다. DISCORD_TOKEN을 확인하세요.") from None
     except discord.NotFound:
         logger.error("채널을 찾을 수 없음: channel_id=%s", channel_id)
+        await bot.close()
+        raise ConfigError(f"채널을 찾을 수 없습니다. CHANNEL_ID={channel_id} 를 확인하세요.") from None
+    except discord.HTTPException as exc:
+        logger.error("채널 조회 실패: %s", exc)
         await bot.close()
         raise
 
@@ -75,10 +84,12 @@ async def deliver_via_bot(result) -> None:
         logger.info("Discord 전송 완료")
     except discord.Forbidden:
         logger.error("채널 메시지 전송 권한 없음")
-        await channel.send("❌ 봇에 채널 메시지 전송 권한이 없습니다.")
-    except Exception as e:
+        if channel:
+            await channel.send("❌ 봇에 채널 메시지 전송 권한이 없습니다.")
+    except Exception as exc:
         logger.exception("일일 뉴스 전송 중 오류")
-        await channel.send(f"❌ 에러 발생: {e}")
+        if channel:
+            await channel.send(f"❌ 에러 발생: {safe_error_message(exc)}")
     finally:
         await bot.close()
 

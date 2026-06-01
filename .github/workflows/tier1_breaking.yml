@@ -1,12 +1,10 @@
-name: Daily Man Utd News
+name: Tier1 Breaking News
 
 on:
-  schedule:
-    - cron: "0 22 * * *" # UTC 22:00 = 한국 시간 오전 7:00
   workflow_dispatch:
 
 jobs:
-  build:
+  send:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -27,8 +25,9 @@ jobs:
           path: data/sent_urls.json
           key: sent-urls-${{ github.repository }}
 
-      - name: Run script
+      - name: Send tier1-only briefing
         env:
+          TIER1_ONLY: "1"
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
@@ -40,5 +39,5 @@ jobs:
           FAILURE_WEBHOOK_URL: ${{ secrets.FAILURE_WEBHOOK_URL }}
         run: |
           curl -sf -H "Content-Type: application/json" \
-            -d "{\"content\":\"❌ 일일 뉴스 워크플로 실패: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            -d "{\"content\":\"❌ 1티어 속보 워크플로 실패: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
             "$FAILURE_WEBHOOK_URL"
